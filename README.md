@@ -1,97 +1,152 @@
-﻿# AI PCB Assistant for KiCad
+# 🔌 CircuitMind AI — AI-Powered PCB Design Platform
 
-An AI-powered PCB design assistant that runs entirely on your local machine, integrated directly into KiCad as an Action Plugin.
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10+-green.svg)](https://python.org)
+[![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)](https://nextjs.org)
+[![KiCad](https://img.shields.io/badge/KiCad-9.x-blue.svg)](https://kicad.org)
 
-**What it does:**
-- Generate circuits from natural language descriptions
-- Optimize component placement
-- Run DFM (Design for Manufacturability) checks
-- Export generated circuits as `.kicad_sch` schematic files
-
-**AI is powered by [Ollama](https://ollama.com/) running locally — no cloud, no API keys.**
+An **AI-powered PCB design platform** that combines a modern web dashboard with a KiCad plugin, enabling circuit generation from natural language, intelligent component placement, and DFM (Design for Manufacturability) analysis — all running locally on your machine.
 
 ---
 
-## Repository Structure
+## ✨ Key Features
+
+- 🧠 **AI Circuit Generation** — Describe a circuit in plain English; get a complete schematic with BOM
+- 📐 **Smart Component Placement** — Automated placement optimization powered by machine learning
+- 🔍 **DFM Analysis** — Real-time manufacturing rule checks and design validation
+- 📊 **Modern Web Dashboard** — Beautiful Next.js frontend with live circuit preview, template library, and architecture visualization
+- 🔧 **KiCad Plugin** — Direct integration into KiCad 9.x PCB Editor as an Action Plugin
+- 📦 **Export to KiCad** — Generate `.kicad_sch` schematics ready for production
+- 🏠 **100% Local** — AI runs via [Ollama](https://ollama.com/) — no cloud, no API keys
+
+---
+
+## 🏗 Architecture Overview
 
 ```
-pcb/
- plugin/             # KiCad Action Plugin (install this into KiCad)
-    __init__.py         # Package init — triggers plugin registration
-    pcbnew_action.py    # KiCad 9 PCM entry point
-    plugin.py           # Full UI + board integration logic
-    metadata.json       # KiCad PCM package descriptor
-
- ai_backend/         # FastAPI server + AI engines
-    ai_server.py        # Main FastAPI application
-    circuit_schema.py   # Pydantic models / request schemas
-    requirements.txt    # Python dependencies
-    engines/
-       llm_engine.py       # Ollama / GGUF LLM interface
-       placement_engine.py # Placement optimization
-       dfm_engine.py       # DFM rule checker
-       schematic_engine.py # Circuit graph builder
-       kicad_exporter.py   # .kicad_sch file generator
-    templates/          # Built-in circuit templates
-    output/             # Generated files (gitignored)
-
- models/             # AI model assets (see models/README.md)
- frontend/           # Optional Next.js dashboard (not required)
- build_pcm.ps1       # Script: build versioned PCM ZIP
- deploy_kicad_plugin.ps1  # Script: fast dev deploy to KiCad
- dist/               # Built PCM packages (gitignored)
+┌─────────────────────────────────────────────────────────┐
+│                    User Interface                       │
+│  ┌──────────────────┐    ┌───────────────────────────┐  │
+│  │  Next.js Frontend│    │  KiCad Action Plugin      │  │
+│  │  (Port 3000)     │    │  (Embedded in KiCad 9)    │  │
+│  └────────┬─────────┘    └────────────┬──────────────┘  │
+│           │          REST API         │                  │
+│           └──────────┬────────────────┘                  │
+│                      ▼                                  │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │              FastAPI Backend (Port 8765)           │  │
+│  │  ┌──────────┐ ┌──────────┐ ┌────────────────────┐│  │
+│  │  │LLM Engine│ │Placement │ │DFM Engine          ││  │
+│  │  │(Ollama)  │ │Engine    │ │                    ││  │
+│  │  └──────────┘ └──────────┘ └────────────────────┘│  │
+│  │  ┌──────────────┐ ┌────────────────────────────┐ │  │
+│  │  │Schematic Eng.│ │KiCad Exporter (.kicad_sch) │ │  │
+│  │  └──────────────┘ └────────────────────────────┘ │  │
+│  └───────────────────────────────────────────────────┘  │
+│                      ▼                                  │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │        Ollama (localhost:11434)                    │  │
+│  │        deepseek-coder:6.7b / codellama / llama3   │  │
+│  └───────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## System Requirements
+## 📂 Repository Structure
+
+```
+pcb_design/
+├── ai_backend/                 # FastAPI backend server + AI engines
+│   ├── ai_server.py            # Main FastAPI application
+│   ├── circuit_schema.py       # Pydantic models / request schemas
+│   ├── requirements.txt        # Python dependencies
+│   ├── smoke_test.py           # Backend smoke tests
+│   ├── engines/
+│   │   ├── llm_engine.py       # Ollama / GGUF LLM interface
+│   │   ├── placement_engine.py # ML-powered placement optimization
+│   │   ├── dfm_engine.py       # DFM rule checker
+│   │   ├── schematic_engine.py # Circuit graph builder
+│   │   └── kicad_exporter.py   # .kicad_sch file generator
+│   ├── templates/              # Built-in circuit templates (JSON)
+│   └── output/                 # Generated schematics, BOMs, SVGs
+│
+├── frontend/                   # Next.js 16 web dashboard
+│   └── src/
+│       ├── app/
+│       │   ├── page.tsx                # Landing / hero page
+│       │   └── dashboard/
+│       │       ├── page.tsx            # Main dashboard overview
+│       │       ├── generate/page.tsx   # AI circuit generation
+│       │       ├── placement/page.tsx  # Placement optimization
+│       │       ├── dfm/page.tsx        # DFM analysis
+│       │       ├── templates/page.tsx  # Template library browser
+│       │       └── architecture/page.tsx # System architecture view
+│       └── components/
+│           ├── layout/Sidebar.tsx      # Dashboard sidebar navigation
+│           └── ui/                     # Reusable UI components
+│
+├── plugin/                     # KiCad 9 Action Plugin
+│   ├── __init__.py             # Plugin registration
+│   ├── pcbnew_action.py        # KiCad 9 PCM entry point
+│   ├── plugin.py               # Full UI + board integration logic
+│   └── metadata.json           # KiCad PCM package descriptor
+│
+├── models/                     # Local AI model assets (optional GGUF)
+├── files/                      # Project documentation & plans
+│   ├── AI_PCB_Platform_Comprehensive_Plan.md
+│   ├── Technical_Architecture_Specification.md
+│   ├── Executive_Summary.md
+│   └── Week_by_Week_Execution_Guide.md
+│
+├── stitch_ai_pcb_design_platform_judge_demo/  # UI demo screenshots & code
+├── build_pcm.ps1               # Build versioned KiCad PCM ZIP
+└── deploy_kicad_plugin.ps1     # Fast dev deploy to KiCad
+```
+
+---
+
+## 🖥 System Requirements
 
 | Requirement | Version |
 |-------------|---------|
-| KiCad | 9.x |
-| Python | 3.10 or newer |
-| OS | Windows 10/11 (primary), Linux supported |
-| Ollama | Latest — [ollama.com](https://ollama.com/) |
+| Python      | 3.10 or newer |
+| Node.js     | 18.x or newer |
+| KiCad       | 9.x (for plugin only) |
+| Ollama      | Latest — [ollama.com](https://ollama.com/) |
+| OS          | macOS, Windows 10/11, Linux |
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
 
-### Step 1 — Install and start Ollama
+### 1. Clone the repository
 
-Download Ollama from [ollama.com](https://ollama.com/) and install it. Then pull the coding model:
-
-```powershell
-ollama pull deepseek-coder:6.7b
+```bash
+git clone https://github.com/praju455/pcb_design.git
+cd pcb_design
 ```
 
-Ollama runs as a background service automatically after install. Verify it is up:
+### 2. Set up the AI backend
 
-```powershell
-Invoke-RestMethod http://localhost:11434/api/tags
-```
-
----
-
-### Step 2 — Set up the backend
-
-```powershell
+```bash
 cd ai_backend
 python -m venv venv
-venv\Scripts\activate
+source venv/bin/activate        # macOS/Linux
+# venv\Scripts\activate         # Windows
 pip install -r requirements.txt
 ```
 
 Start the backend server:
 
-```powershell
+```bash
 python -m uvicorn ai_server:app --host 0.0.0.0 --port 8765
 ```
 
-Verify it is healthy:
+Verify it's running:
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:8765/health
+```bash
+curl http://127.0.0.1:8765/health
 ```
 
 Expected response:
@@ -105,11 +160,38 @@ Expected response:
 }
 ```
 
----
+### 3. Set up the frontend dashboard
 
-### Step 3 — Install the KiCad plugin
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-Copy the entire `plugin/` folder into KiCad's scripting plugins directory and name it `ai_pcb_assistant`:
+Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+### 4. Install & start Ollama (for AI generation)
+
+Download from [ollama.com](https://ollama.com/) and pull the recommended model:
+
+```bash
+ollama pull deepseek-coder:6.7b
+```
+
+Verify it's running:
+
+```bash
+curl http://localhost:11434/api/tags
+```
+
+### 5. (Optional) Install the KiCad plugin
+
+Copy the `plugin/` folder into KiCad's scripting plugins directory:
+
+**macOS:**
+```
+~/Library/Preferences/kicad/9.0/scripting/plugins/ai_pcb_assistant/
+```
 
 **Windows:**
 ```
@@ -123,55 +205,41 @@ Copy the entire `plugin/` folder into KiCad's scripting plugins directory and na
 
 Then **fully restart KiCad**.
 
-Or use the deploy script from repo root (Windows only):
+---
 
-```powershell
-.\deploy_kicad_plugin.ps1
-```
+## 🌐 Frontend Dashboard Pages
+
+| Page | Route | Description |
+|------|-------|-------------|
+| **Landing** | `/` | Hero page with platform overview |
+| **Dashboard** | `/dashboard` | Main overview with status cards and quick actions |
+| **Generate** | `/dashboard/generate` | AI circuit generation from natural language prompts |
+| **Placement** | `/dashboard/placement` | Component placement optimization tool |
+| **DFM Analysis** | `/dashboard/dfm` | Design for Manufacturability checks |
+| **Templates** | `/dashboard/templates` | Browse and use built-in circuit templates |
+| **Architecture** | `/dashboard/architecture` | System architecture visualization |
 
 ---
 
-### Step 4 — Use the plugin
-
-1. Open a PCB file (`.kicad_pcb`) in KiCad PCB Editor
-2. Go to **Tools  External Plugins  AI PCB Assistant Pro**
-3. Backend URL defaults to `http://localhost:8765`
-
-| Action | Description |
-|--------|-------------|
-| Type a prompt  **Execute** | Generate a circuit or get AI placement advice |
-| Toolbar **Optimize** | Run placement optimization on the current board |
-| Toolbar **DFM Check** | Analyze board for manufacturing issues |
-| Toolbar **Generate** | Open circuit generation dialog |
-
----
-
-## AI Generation Modes
+## 🤖 AI Generation Modes
 
 The backend selects the best available mode automatically:
 
-### Mode 1 — Ollama (recommended, used by default)
+### Mode 1 — Ollama (recommended)
 
-Backend auto-detects Ollama at `http://localhost:11434` and picks the first available model:
+Auto-detects Ollama at `http://localhost:11434` and picks the first available model:
 
-```
-deepseek-coder:6.7b   recommended
-deepseek-coder:latest
-codellama
-llama3
-mistral
-```
+| Model | Status |
+|-------|--------|
+| `deepseek-coder:6.7b` | ⭐ Recommended |
+| `deepseek-coder:latest` | Supported |
+| `codellama` | Supported |
+| `llama3` | Supported |
+| `mistral` | Supported |
 
-Optional environment variable overrides:
+### Mode 2 — Template-only (no AI required)
 
-```powershell
-$env:OLLAMA_API_URL = "http://localhost:11434"   # default
-$env:OLLAMA_MODEL   = "deepseek-coder:6.7b"      # force a specific model
-```
-
-### Mode 2 — Template-only (always available, no Ollama needed)
-
-Built-in deterministic templates — works offline with zero AI:
+Built-in deterministic templates — works offline with zero AI dependencies:
 
 | Template | Description |
 |----------|-------------|
@@ -181,47 +249,59 @@ Built-in deterministic templates — works offline with zero AI:
 | MOSFET Switch | N-channel low-side switch |
 | Op-Amp Buffer | Unity gain buffer |
 
-### Mode 3 — GGUF local model (optional fallback)
+### Mode 3 — GGUF local model (fallback)
 
-If Ollama is not installed, the backend can use a local GGUF file via `llama-cpp-python`:
-
-```
-models/deepseek-coder-6.7b-instruct.Q5_K_M.gguf
-```
-
-Download link and instructions: `models/README.md`
+Uses a local GGUF file via `llama-cpp-python`. See `models/README.md` for download instructions.
 
 ---
 
-## Backend API Reference
+## 📡 Backend API Reference
 
 Base URL: `http://127.0.0.1:8765`
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/health` | Server health and capability status |
+| `GET` | `/health` | Server health & capability status |
 | `GET` | `/templates` | List available circuit templates |
 | `POST` | `/generate` | Generate a circuit from a text prompt |
 | `POST` | `/placement/optimize` | Optimize component placement |
-| `POST` | `/dfm/check` | Run DFM analysis |
-| `GET` | `/download/{filename}` | Download generated `.kicad_sch` |
+| `POST` | `/dfm/check` | Run DFM analysis on a design |
+| `GET` | `/download/{filename}` | Download generated `.kicad_sch` file |
 
-### `/generate` request body
+### Example: Generate a circuit
 
-```json
-{
-  "prompt": "555 timer astable LED blinker at 1Hz",
-  "priority": "quality"
-}
+```bash
+curl -X POST http://127.0.0.1:8765/generate \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "555 timer astable LED blinker at 1Hz", "priority": "quality"}'
 ```
 
-`priority` options: `"quality"` | `"speed"` | `"template"`
+Priority options: `"quality"` | `"speed"` | `"template"`
 
 ---
 
-## Development
+## 🛠 Tech Stack
 
-### Rebuild the PCM ZIP (for distribution)
+| Layer | Technologies |
+|-------|-------------|
+| **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS 4, Framer Motion, Radix UI, Lucide Icons |
+| **Backend** | Python, FastAPI, Uvicorn, Pydantic, NumPy |
+| **AI/ML** | Ollama, llama-cpp-python, deepseek-coder |
+| **PCB Integration** | KiCad 9 Action Plugin, `.kicad_sch` export |
+| **Design System** | shadcn/ui components, custom MechButton, NodeCanvas, StatusLabel |
+
+---
+
+## 🧪 Development
+
+### Run backend smoke tests
+
+```bash
+cd ai_backend
+python smoke_test.py
+```
+
+### Build KiCad PCM ZIP (for distribution)
 
 ```powershell
 .\build_pcm.ps1
@@ -229,90 +309,42 @@ Base URL: `http://127.0.0.1:8765`
 
 Output: `dist/pcm/v{version}/ai-pcb-assistant-pcm-v{version}.zip`
 
-Install this ZIP via KiCad  Plugin and Content Manager  **Install from File**.
-
-### Fast dev deploy (direct copy, skip PCM)
+### Fast dev deploy (direct copy to KiCad)
 
 ```powershell
 .\deploy_kicad_plugin.ps1
 ```
 
-Restart KiCad after running this.
+---
 
-### Run smoke tests
+## 🐛 Troubleshooting
 
-```powershell
-cd ai_backend
-python smoke_test.py
-```
+| Issue | Solution |
+|-------|---------|
+| Backend not reachable | Ensure `uvicorn` is running on port 8765. Check with `curl http://127.0.0.1:8765/health` |
+| LLM not loaded | Run `ollama list` to check models. Pull with `ollama pull deepseek-coder:6.7b` |
+| Plugin not in KiCad | Ensure folder is named `ai_pcb_assistant` in the plugins dir. Fully restart KiCad |
+| Port 8765 in use | Set `PORT=8767` env var and update plugin/frontend config |
+| `onnxruntime` warning | Non-critical — run `pip install onnxruntime` to enable RL placement |
 
 ---
 
-## Frontend (Optional)
+## 👥 Contributing
 
-A Next.js dashboard is available but not required for the KiCad plugin workflow.
-
-```powershell
-cd frontend
-npm install
-npm run dev
-```
-
-Runs at `http://localhost:3000`, targets backend at `http://127.0.0.1:8765`.
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ---
 
-## Troubleshooting
+## 📄 License
 
-### Plugin not appearing in KiCad
-
-- Folder must be named exactly `ai_pcb_assistant` inside the plugins directory
-- Fully restart KiCad (not just "Refresh Plugins")
-- Open the KiCad Scripting Console and run `import ai_pcb_assistant` to see any error
-
-### Plugin window closes immediately
-
-Re-run `.\deploy_kicad_plugin.ps1` then restart KiCad. The root cause (frame garbage-collection) is fixed in the current version.
-
-### Backend not reachable
-
-```powershell
-Invoke-RestMethod http://127.0.0.1:8765/health
-```
-
-If unreachable, start the backend (see Step 2 above).
-
-### LLM not loaded / generation falls back to templates
-
-```powershell
-ollama list          # check what models are available
-ollama pull deepseek-coder:6.7b   # pull if missing
-```
-
-Backend logs will show `LLM engine: Ollama ready` when connected.
-
-### Port 8765 already in use
-
-```powershell
-$env:PORT = "8767"
-python ai_server.py
-```
-
-Update the URL in plugin Settings to `http://localhost:8767`.
-
-### `onnxruntime not installed` warning
-
-Non-critical — RL placement is just disabled. All other features work. To enable:
-
-```powershell
-pip install onnxruntime
-```
+This project is open source. See individual files for license details.
 
 ---
 
-## Branch Strategy
-
-| Branch | Purpose |
-|--------|---------|
-| `main` | Stable releases |
-| `testing` | Active development |
+<p align="center">
+  Built with ❤️ by <a href="https://github.com/praju455">praju455</a>
+</p>
