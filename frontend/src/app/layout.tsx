@@ -18,7 +18,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CircuitMind AI | Expert-Grade PCB Design",
+  title: "NovaForge AI | Expert-Grade PCB Design",
   description: "Generative schematic design for senior engineers. Production-ready netlists, BOMs, and PCB layouts.",
 };
 

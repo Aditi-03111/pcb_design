@@ -165,7 +165,7 @@ export default function HeroPage() {
           <div className="flex flex-col gap-4">
             <div className="flex items-center gap-2">
               <Cpu className="w-6 h-6 text-primary" />
-              <span className="font-display font-black text-xl text-white uppercase tracking-tighter">CircuitMind</span>
+              <span className="font-display font-black text-xl text-white uppercase tracking-tighter">NovaForge</span>
             </div>
             <p className="text-white/30 text-sm max-w-xs">Industrial AI for next-generation hardware engineering.</p>
           </div>

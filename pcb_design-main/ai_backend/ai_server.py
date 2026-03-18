@@ -1238,7 +1238,7 @@ def _build_preview_svg(board: BoardData, prompt: str) -> str:
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
   <rect width="100%" height="100%" fill="#14213d" />
   <rect x="36" y="36" width="{width - 72}" height="{height - 72}" rx="28" fill="#1f2a44" stroke="#f25f4c" stroke-width="2" />
-  <text x="72" y="90" fill="#f8f4e8" font-size="28" font-family="Arial">CircuitMind Judge Preview</text>
+  <text x="72" y="90" fill="#f8f4e8" font-size="28" font-family="Arial">NovaForge Judge Preview</text>
   <text x="72" y="122" fill="#98a6c3" font-size="16" font-family="Arial">{prompt[:90]}</text>
   <g>{"".join(traces)}</g>
   <g>{"".join(nodes)}</g>
