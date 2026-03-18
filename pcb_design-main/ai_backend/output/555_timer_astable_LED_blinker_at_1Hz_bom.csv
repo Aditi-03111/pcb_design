@@ -1,9 +1,0 @@
-Reference,Value,Footprint,Layer,Polarized
-U1,NE555,Package_DIP:DIP-8_W7.62mm,top,no
-R1,10k,Resistor_SMD:R_0805_2012Metric,top,no
-R2,47k,Resistor_SMD:R_0805_2012Metric,top,no
-R3,330,Resistor_SMD:R_0805_2012Metric,top,no
-C1,10uF,Capacitor_SMD:C_0805_2012Metric,top,yes
-C2,10nF,Capacitor_SMD:C_0805_2012Metric,top,no
-C3,100nF,Capacitor_SMD:C_0805_2012Metric,top,no
-D1,Red,LED_SMD:LED_0805_2012Metric,top,yes

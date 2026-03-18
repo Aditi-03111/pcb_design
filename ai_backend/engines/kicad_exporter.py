@@ -1237,7 +1237,8 @@ class KiCadSchematicWriter:
         # Try pin offsets from component data
         for pin in comp.pins:
             if pin.number == pin_num:
-                dx, dy = pin.x, pin.y
+                dx = getattr(pin, 'x', 0) or 0
+                dy = getattr(pin, 'y', 0) or 0
                 if dx == 0 and dy == 0:
                     # Assign default offsets for 2-pin passives
                     if pin_num == "1":

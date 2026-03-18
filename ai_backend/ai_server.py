@@ -37,6 +37,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple
 
+# Load .env file if present (before anything else reads os.environ)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent / ".env")
+except ImportError:
+    pass  # python-dotenv not installed — use shell env vars directly
+
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -104,21 +111,16 @@ SA_ITERATIONS      = 500
 # (keywords, template_stem, score_weight) – highest cumulative score wins.
 
 TEMPLATE_KEYWORDS: List[Tuple[List[str], str, int]] = [
-    (["555 timer", "ne555", "astable 555", "555 oscillator"], "555_timer_oscillator", 100),
-    (["555", "timer", "blink", "astable", "multivibrator"],   "555_timer",            80),
-    (["3.3v regulator", "3v3 ldo", "ams1117-3.3"],            "3v3_regulator_ldo",    100),
-    (["3.3v", "3v3", "ams1117", "ldo", "voltage regulator"], "3v3_regulator",        80),
-    (["5v regulator", "5v ldo", "7805", "5v power"],          "5v_regulator",         90),
-    (["led driver", "led array", "multiple led"],              "led_array_driver",     90),
-    (["led", "diode", "indicator", "resistor led"],            "led_resistor",         70),
-    (["opamp buffer", "unity gain buffer", "voltage follower"],"opamp_buffer",         90),
-    (["opamp", "op-amp", "operational amplifier", "gain"],    "opamp_general",        70),
-    (["mosfet switch", "high side switch", "low side switch"],"mosfet_switch",        90),
-    (["mosfet", "nmos", "pmos", "transistor switch"],         "mosfet_general",       70),
-    (["rc filter", "low pass filter", "high pass filter"],    "rc_filter",            80),
-    (["voltage divider", "resistor divider"],                  "voltage_divider",      75),
-    (["crystal oscillator", "quartz", "mhz crystal"],         "crystal_oscillator",   85),
-    (["usb power", "usb protection", "usb esd"],              "usb_protection",       90),
+    # 555 timer — maps to the actual template file
+    (["555 timer", "ne555", "astable 555", "555 oscillator", "555 astable", "555 multivibrator"], "555_timer", 80),
+    # 3.3 V regulator
+    (["3.3v regulator", "3v3 ldo", "ams1117-3.3", "3v3 regulator", "ams1117", "ldo regulator", "voltage regulator 3.3"], "3v3_regulator", 80),
+    # LED + resistor — only match when LED is clearly the main subject
+    (["led resistor", "led circuit", "led indicator", "led blinker", "resistor led", "current limiting resistor led"], "led_resistor", 80),
+    # Op-amp buffer
+    (["opamp buffer", "op-amp buffer", "unity gain buffer", "voltage follower", "operational amplifier buffer"], "opamp_buffer", 80),
+    # MOSFET switch
+    (["mosfet switch", "nmos switch", "pmos switch", "transistor switch", "high side switch", "low side switch"], "mosfet_switch", 80),
 ]
 
 # ── Known KiCad power/virtual symbol prefixes to skip in ref validation ───────
@@ -421,8 +423,10 @@ class AdvancedDFMEngine:
     """Full netlist-aware DFM analysis engine."""
 
     POWER_NETS: Set[str] = {
-        "VCC", "VDD", "3V3", "3.3V", "5V", "1V8", "1.8V", "12V", "24V",
-        "VPWR", "VSUP", "AVCC", "DVCC", "VCCIO", "VCCINT",
+        "VCC", "VDD", "3V3", "+3V3", "3.3V", "+3.3V",
+        "5V", "+5V", "1V8", "1.8V", "12V", "+12V", "24V",
+        "VIN", "VBAT", "VBUS", "VPWR", "VSUP",
+        "AVCC", "DVCC", "VCCIO", "VCCINT",
     }
     GROUND_NETS: Set[str] = {
         "GND", "VSS", "AGND", "DGND", "PGND", "SGND", "VEE", "VSSA", "VSSD",
@@ -568,8 +572,9 @@ class AdvancedDFMEngine:
             if not ic.is_ic:
                 continue
             ic_nets = set(self.component_nets.get(ic.ref, []))
-            power_nets  = ic_nets & self.POWER_NETS
-            ground_nets = ic_nets & self.GROUND_NETS
+            # Match both exact names and nets whose type was enriched to power/ground
+            power_nets  = {n for n in ic_nets if self._is_power_net(n)}
+            ground_nets = {n for n in ic_nets if self._is_ground_net(n)}
 
             if not power_nets:
                 self.violations.append(DFMViolation(
@@ -768,6 +773,27 @@ class AdvancedDFMEngine:
         n1 = set(self.component_nets.get(ref1, []))
         n2 = set(self.component_nets.get(ref2, []))
         return bool(n1 & n2)
+
+    def _is_power_net(self, net_name: str) -> bool:
+        """True if net_name is a known power rail (exact or substring match)."""
+        up = net_name.upper().replace(" ", "")
+        if up in {n.upper() for n in self.POWER_NETS}:
+            return True
+        # Also match nets enriched via BoardConnection properties
+        for conn in self.board.connections:
+            if conn.net == net_name:
+                return conn.properties.net_type == "power"
+        return False
+
+    def _is_ground_net(self, net_name: str) -> bool:
+        """True if net_name is a known ground rail (exact or substring match)."""
+        up = net_name.upper().replace(" ", "")
+        if up in {n.upper() for n in self.GROUND_NETS}:
+            return True
+        for conn in self.board.connections:
+            if conn.net == net_name:
+                return conn.properties.net_type == "ground"
+        return False
 
     def _bounding_box(self, comp: ComponentData) -> Dict[str, float]:
         sizes = {"R": 1.6, "C": 1.6, "L": 2.0, "D": 2.0, "U": 5.0,
@@ -1017,12 +1043,19 @@ def _enrich_net_properties(circuit_data: Dict[str, Any]) -> None:
         "VCC": {"net_type": "power", "voltage": 5.0},
         "VDD": {"net_type": "power", "voltage": 3.3},
         "3V3": {"net_type": "power", "voltage": 3.3},
+        "+3V3": {"net_type": "power", "voltage": 3.3},
         "3.3V": {"net_type": "power", "voltage": 3.3},
+        "+3.3V": {"net_type": "power", "voltage": 3.3},
         "5V": {"net_type": "power", "voltage": 5.0},
+        "+5V": {"net_type": "power", "voltage": 5.0},
         "1V8": {"net_type": "power", "voltage": 1.8},
         "1.8V": {"net_type": "power", "voltage": 1.8},
         "12V": {"net_type": "power", "voltage": 12.0},
+        "+12V": {"net_type": "power", "voltage": 12.0},
         "24V": {"net_type": "power", "voltage": 24.0},
+        "VIN": {"net_type": "power", "voltage": 5.0},
+        "VBAT": {"net_type": "power", "voltage": 3.7},
+        "VBUS": {"net_type": "power", "voltage": 5.0},
         "VPWR": {"net_type": "power", "voltage": 5.0},
         "VSUP": {"net_type": "power", "voltage": 5.0},
         "AVCC": {"net_type": "power", "voltage": 3.3},
@@ -1129,13 +1162,31 @@ async def lifespan(app: FastAPI):
 
     # LLM
     try:
-        from engines.llm_engine import load_llm   # type: ignore
-        _state.llm = load_llm()
-        logger.info("LLM engine loaded.")
+        from engines.llm_engine import LLMEngine  # type: ignore
+        llm = LLMEngine()
+        if llm.load():
+            _state.llm = llm
+            logger.info("LLM engine loaded — backend=%s", llm.backend)
+        else:
+            # load() returned False — log exactly why
+            key = os.environ.get("OPENAI_API_KEY", "")
+            logger.warning(
+                "LLM load() returned False. OPENAI_API_KEY=%s OPENAI_API_BASE=%s",
+                "SET" if key else "NOT SET",
+                os.environ.get("OPENAI_API_BASE", "not set"),
+            )
+            # Force-create OpenAI backend if key is present
+            if key:
+                llm.backend      = "openai"
+                llm.openai_key   = key
+                llm.openai_base  = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1").rstrip("/")
+                llm.openai_model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+                _state.llm = llm
+                logger.info("LLM force-initialised from env — backend=openai model=%s", llm.openai_model)
     except ImportError:
         logger.warning("engines.llm_engine not found – LLM disabled.")
     except Exception as exc:
-        logger.warning("LLM failed to load: %s", exc)
+        logger.warning("LLM failed to load: %s", exc, exc_info=True)
 
     # RL placement
     try:
@@ -1217,6 +1268,20 @@ async def health_check() -> HealthResponse:
     )
 
 
+@app.get("/debug/llm", tags=["meta"])
+async def debug_llm() -> Dict[str, Any]:
+    """Show LLM state and env vars (safe — key is masked)."""
+    key = os.environ.get("OPENAI_API_KEY", "")
+    return {
+        "llm_loaded":    _state.llm is not None,
+        "backend":       getattr(_state.llm, "backend", None),
+        "model":         getattr(_state.llm, "openai_model", None) or getattr(_state.llm, "ollama_model", None),
+        "OPENAI_API_KEY": f"{key[:8]}...{key[-4:]}" if len(key) > 12 else ("SET" if key else "NOT SET"),
+        "OPENAI_API_BASE": os.environ.get("OPENAI_API_BASE", "not set"),
+        "OPENAI_MODEL":    os.environ.get("OPENAI_MODEL", "not set"),
+    }
+
+
 @app.post("/generate", response_model=GenerateResponse, tags=["generation"])
 async def generate_circuit(
     request: GenerateRequest, background_tasks: BackgroundTasks
@@ -1251,23 +1316,36 @@ async def generate_circuit(
     if best_name and best_name in _state.template_cache:
         circuit_data = _state.template_cache[best_name]
         template_used = best_name
-    elif _state.llm:
-        try:
-            # generate_circuit_json is async — must be awaited.  Without the
-            # await it returns a coroutine object (truthy) so circuit_data would
-            # be set to a coroutine instead of a dict, silently bypassing the
-            # template fallback and裂failing JSON serialisation later.
-            circuit_data = await _state.llm.generate_circuit_json(request.prompt) or None
-        except Exception as exc:
-            warnings.append(f"LLM generation failed: {exc}")
+    else:
+        # Get LLM — use cached state or create fresh from env
+        llm = _state.llm
+        if llm is None:
+            api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+            if api_key:
+                try:
+                    from engines.llm_engine import LLMEngine  # type: ignore
+                    llm = LLMEngine()
+                    llm.backend      = "openai"
+                    llm.openai_key   = api_key
+                    llm.openai_base  = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1").rstrip("/")
+                    llm.openai_model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+                    _state.llm = llm  # cache for next request
+                except Exception as exc:
+                    warnings.append(f"LLM init failed: {exc}")
+
+        if llm:
+            try:
+                circuit_data = await llm.generate_circuit_json(request.prompt) or None
+            except Exception as exc:
+                warnings.append(f"LLM generation failed: {exc}")
 
     if not circuit_data:
         return GenerateResponse(
             success=False,
             error=(
                 "No matching template found and LLM is unavailable. "
-                "Try: '555 timer', '3.3V regulator', 'LED resistor', "
-                "'op-amp buffer', 'MOSFET switch'."
+                "Set OPENAI_API_KEY in .env to generate any circuit. "
+                f"Warnings: {warnings}"
             ),
             warnings=warnings,
             request_id=request_id,

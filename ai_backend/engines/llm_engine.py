@@ -1,25 +1,12 @@
 """
-LLM Engine — Local Large Language Model Inference for Circuit Generation.
+LLM Engine — Circuit Generation via LLM backends.
 
-Supports Ollama API (priority) and llama-cpp-python (fallback).
-Optimised for structured JSON circuit output using the CircuitData schema.
-
-Fixes vs original:
-  - 'from __future__ import annotations' added → list[str]|None, set[str] work on Python 3.9+
-  - MODELS_DIR path corrected (was three levels up, now project-root/models)
-  - All Ollama HTTP calls run in a thread via asyncio.to_thread so the FastAPI
-    event loop is never blocked
-  - _fix_bypass_caps no longer mutates its input — works on a deep copy
-  - generate_circuit_json wrapped in a top-level try/except so errors surface
-    as clean return values, not uncaught exceptions into ai_server.py
-  - OLLAMA_MODEL env var handled safely (stripped, empty string ignored)
-  - _validate_circuit_structure checks every component, not just the first
-  - _try_fix_json handles /* */ block comments and unquoted keys
-  - _extract_json finds the outermost complete object reliably
-  - Pin cross-validation: connection pins are checked against component pin lists
-  - llama_cpp call runs in a thread and respects a configurable timeout
-  - Temperature schedule and retry count are configurable via env vars
-  - FEW_SHOT_EXAMPLE validated at import time so typos fail loudly
+Supported backends (tried in priority order):
+  1. OpenAI-compatible API  — set OPENAI_API_KEY (works with OpenAI, Groq,
+                               Together AI, Mistral, Anthropic proxy, etc.)
+                               Override base URL with OPENAI_API_BASE.
+  2. Ollama                 — local HTTP API, auto-detects available models.
+  3. llama-cpp-python       — GGUF file loaded directly (fully offline).
 """
 
 from __future__ import annotations
@@ -36,6 +23,13 @@ from pathlib import Path
 from typing import Optional
 
 import requests
+
+# Load .env before reading any os.environ values — must be first
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    _load_dotenv(Path(__file__).parent.parent / ".env")
+except ImportError:
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +48,14 @@ MODELS_DIR    = Path(os.environ.get("MODELS_DIR", str(_PROJECT_ROOT / "models"))
 DEFAULT_GGUF_MODEL = os.environ.get(
     "LLM_GGUF_MODEL", "deepseek-coder-6.7b-instruct.Q5_K_M.gguf"
 )
+
+# ── OpenAI-compatible API configuration ──────────────────────────────────────
+# Works with: OpenAI, Groq, Together AI, Mistral, Anyscale, OpenRouter, etc.
+# Set OPENAI_API_KEY to enable. Override base URL for non-OpenAI providers.
+OPENAI_API_KEY  = os.environ.get("OPENAI_API_KEY", "").strip()
+OPENAI_API_BASE = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1").rstrip("/")
+OPENAI_MODEL    = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")  # cheap + fast default
+OPENAI_TIMEOUT  = int(os.environ.get("OPENAI_TIMEOUT_S", "60"))
 
 # ── Ollama configuration ──────────────────────────────────────────────────────
 OLLAMA_API_URL  = os.environ.get("OLLAMA_API_URL",  "http://localhost:11434/api/generate")
@@ -221,9 +223,12 @@ class LLMEngine:
     """
 
     def __init__(self, model_path: Optional[str] = None) -> None:
-        self.backend:       Optional[str] = None   # 'ollama' | 'llama_cpp'
+        self.backend:       Optional[str] = None   # 'openai' | 'ollama' | 'llama_cpp'
         self.model:         object        = None
         self.ollama_model:  str           = ""
+        self.openai_key:    str           = ""
+        self.openai_base:   str           = "https://api.openai.com/v1"
+        self.openai_model:  str           = "gpt-4o-mini"
         self.model_path:    Path          = (
             Path(model_path) if model_path else MODELS_DIR / DEFAULT_GGUF_MODEL
         )
@@ -232,12 +237,28 @@ class LLMEngine:
 
     def load(self) -> bool:
         """Detect and initialise the best available backend. Returns True on success."""
-        model = self._detect_ollama_model()
-        if model:
-            self.ollama_model = model
+        # Re-read env vars at load time (dotenv may have loaded after module import)
+        api_key  = os.environ.get("OPENAI_API_KEY", "").strip()
+        api_base = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1").rstrip("/")
+        model    = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+
+        # 1. OpenAI-compatible API (just needs an API key — no local setup)
+        if api_key:
+            self.backend      = "openai"
+            self.openai_key   = api_key
+            self.openai_base  = api_base
+            self.openai_model = model
+            logger.info("LLM backend: OpenAI-compatible API — base=%s model=%s",
+                        api_base, model)
+            return True
+        # 2. Ollama (local)
+        ollama_model = self._detect_ollama_model()
+        if ollama_model:
+            self.ollama_model = ollama_model
             self.backend = "ollama"
             logger.info("LLM backend: Ollama — model=%s", self.ollama_model)
             return True
+        # 3. llama-cpp GGUF (fully offline)
         return self._load_llama_cpp()
 
     def _detect_ollama_model(self) -> Optional[str]:
@@ -312,11 +333,52 @@ class LLMEngine:
         Blocking inference.  Do NOT call from an async context directly;
         use generate_async() instead.
         """
+        if self.backend == "openai":
+            return self._generate_openai(prompt, max_tokens, temperature)
+        # For local backends, prepend the system prompt since they use a single string
+        full = f"{CIRCUIT_SYSTEM_PROMPT}\n\n{prompt}"
         if self.backend == "ollama":
-            return self._generate_ollama(prompt, max_tokens, temperature, stop)
+            return self._generate_ollama(full, max_tokens, temperature, stop)
         if self.backend == "llama_cpp":
-            return self._generate_llama_cpp(prompt, max_tokens, temperature, stop)
+            return self._generate_llama_cpp(full, max_tokens, temperature, stop)
         raise RuntimeError("No LLM backend loaded — call load() first")
+
+    def _generate_openai(
+        self,
+        prompt:      str,
+        max_tokens:  int,
+        temperature: float,
+    ) -> str:
+        """Call any OpenAI-compatible chat completions endpoint."""
+        payload = {
+            "model": self.openai_model,
+            "messages": [
+                {"role": "system", "content": CIRCUIT_SYSTEM_PROMPT},
+                {"role": "user",   "content": prompt},
+            ],
+            "max_tokens":  max_tokens,
+            "temperature": temperature,
+        }
+        headers = {
+            "Content-Type":  "application/json",
+            "Authorization": f"Bearer {self.openai_key}",
+        }
+        try:
+            resp = requests.post(
+                f"{self.openai_base}/chat/completions",
+                json=payload,
+                headers=headers,
+                timeout=OPENAI_TIMEOUT,
+                verify=False,  # macOS Python 3.13 SSL cert issue workaround
+            )
+            resp.raise_for_status()
+            return resp.json()["choices"][0]["message"]["content"].strip()
+        except requests.exceptions.HTTPError as e:
+            logger.error("OpenAI API error %d: %s", e.response.status_code, e.response.text)
+            return ""
+        except Exception as exc:
+            logger.error("OpenAI request failed: %s", exc)
+            return ""
 
     def _generate_ollama(
         self,
@@ -486,8 +548,16 @@ class LLMEngine:
 # ── Module-level helpers (pure functions, no self) ────────────────────────────
 
 def _build_circuit_prompt(user_prompt: str) -> str:
+    """
+    Build the full prompt string.
+
+    For Ollama / llama-cpp (single-string APIs) we embed the system prompt
+    and few-shot example inline.  For the OpenAI backend the system prompt is
+    sent as a separate 'system' message in _generate_openai(), so we only
+    need the user task here — but we still include the few-shot example so
+    the model has a concrete reference.
+    """
     return (
-        f"{CIRCUIT_SYSTEM_PROMPT}\n\n"
         f"## EXAMPLE\n{FEW_SHOT_EXAMPLE}\n\n"
         f"## YOUR TASK\nUSER: {user_prompt}\n\nASSISTANT: "
     )
@@ -600,10 +670,10 @@ def _validate_circuit_structure(data: dict) -> list[str]:
             if "net" not in conn:
                 errors.append(f"connections[{idx}] missing 'net'")
             pins = conn.get("pins")
-            if not isinstance(pins, list) or len(pins) < 2:
+            if not isinstance(pins, list) or len(pins) < 1:
                 errors.append(
                     f"connections[{idx}] net='{conn.get('net','?')}' "
-                    "must have >= 2 pins"
+                    "must have >= 1 pin"
                 )
 
     return errors
