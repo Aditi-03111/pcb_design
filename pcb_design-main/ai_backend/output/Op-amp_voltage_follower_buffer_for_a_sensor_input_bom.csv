@@ -1,0 +1,5 @@
+Reference,Value,Footprint,Layer,Polarized
+U1,LM358,Package_SO:SOIC-8_3.9x4.9mm_P1.27mm,top,no
+C1,100nF,Capacitor_SMD:C_0402_1005Metric,top,no
+C2,10uF,Capacitor_SMD:C_0805_2012Metric,top,yes
+R1,10k,Resistor_SMD:R_0805_2012Metric,top,no

@@ -1,0 +1,6 @@
+Reference,Value,Footprint,Layer,Polarized
+Q1,2N7002,Package_TO_SOT_SMD:SOT-23,top,no
+R1,10k,Resistor_SMD:R_0402_1005Metric,top,no
+R2,100k,Resistor_SMD:R_0402_1005Metric,top,no
+D1,1N4148W,Diode_SMD:D_SOD-123,top,yes
+R3,1k,Resistor_SMD:R_0402_1005Metric,top,no

@@ -1,0 +1,4 @@
+Reference,Value,Footprint,Layer,Polarized
+R1,330,Resistor_SMD:R_0805_2012Metric,top,no
+D1,Red,LED_SMD:LED_0805_2012Metric,top,yes
+C1,100nF,Capacitor_SMD:C_0402_1005Metric,top,no
