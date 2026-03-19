@@ -58,4 +58,8 @@ class AIPlacementPluginWrapper(pcbnew.ActionPlugin):
         self._delegate.Run()
 
 
-AIPlacementPluginWrapper().register()
+try:
+    AIPlacementPluginWrapper().register()
+except Exception as _e:
+    import sys
+    print(f"[AI PCB Assistant] Plugin registration failed: {_e}", file=sys.stderr)

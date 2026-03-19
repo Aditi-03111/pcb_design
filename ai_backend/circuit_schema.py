@@ -247,25 +247,37 @@ class Component(BaseModel):
     schema_version: str = Field(default="2.0", pattern=r'^\d+\.\d+$')
     
     _ref_prefixes: ClassVar[set[str]] = {
-        'R', 'C', 'L', 'D', 'LED', 'Q', 'U', 'J', 'P', 
-        'F', 'FB', 'SW', 'Y', 'X', 'TP', 'MH', 'H'
+        'R', 'C', 'L', 'D', 'LED', 'Q', 'U', 'J', 'P',
+        'F', 'FB', 'SW', 'Y', 'X', 'TP', 'MH', 'H',
+        # Additional common prefixes the LLM may generate
+        'RL',   # Relay
+        'T',    # Transformer
+        'TR',   # Transformer (alt)
+        'M',    # Motor / connector
+        'BT',   # Battery
+        'S',    # Switch (alt)
+        'K',    # Relay (alt)
+        'V',    # Voltage source / varistor
+        'Z',    # Zener (alt)
+        'IC',   # IC (alt for U)
+        'CN',   # Connector (alt)
+        'E',    # Electrolytic cap (alt)
+        'PS',   # Power supply
+        'DS',   # Display
+        'LS',   # Speaker/buzzer
+        'SP',   # Speaker (alt)
+        'XU',   # IC socket
+        'ANT',  # Antenna
     }
     
     @field_validator('ref')
     @classmethod
     def validate_reference(cls, v: str) -> str:
-        """Ensure reference follows EIA standard."""
-        match = re.match(r'^([A-Z]{1,3})([0-9]+)$', v)
-        if not match:
-            raise ValueError(f"Invalid reference '{v}'. Format: Letter(s) + Number (e.g., R1, U23, LED1)")
-        
-        prefix, number = match.groups()
-        if prefix not in cls._ref_prefixes:
-            raise ValueError(f"Unknown reference prefix '{prefix}'. Valid: {cls._ref_prefixes}")
-        
-        if len(number) > 4:
-            raise ValueError(f"Reference number too long: {number}")
-        
+        """Accept any EIA-style reference: 1-4 uppercase letters + 1-4 digits."""
+        if not re.match(r'^[A-Z]{1,4}[0-9]{1,4}$', v):
+            raise ValueError(
+                f"Invalid reference '{v}'. Expected format: letters + digits, e.g. R1, U3, LED1, RL2"
+            )
         return v
     
     @field_validator('footprint')
